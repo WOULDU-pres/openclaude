@@ -21,8 +21,8 @@ struct ChatSession {
     session_id: Option<String>,
     current_path: Option<String>,
     history: Vec<HistoryItem>,
-    /// File upload records not yet sent to Codex AI.
-    /// Drained and prepended to the next user prompt so Codex knows about uploaded files.
+    /// File upload records not yet sent to Claude Code AI.
+    /// Drained and prepended to the next user prompt so Claude Code knows about uploaded files.
     pending_uploads: Vec<String>,
     /// Set to true by /clear to prevent a racing polling loop from re-populating history.
     cleared: bool,
@@ -92,14 +92,14 @@ pub fn token_hash(token: &str) -> String {
     hex::encode(&result[..8]) // 16 hex chars
 }
 
-/// Primary bot settings path: ~/.opencodex/bot_settings.json
+/// Primary bot settings path: ~/.openclaude/bot_settings.json
 fn primary_bot_settings_path() -> Option<std::path::PathBuf> {
-    dirs::home_dir().map(|h| h.join(".opencodex").join("bot_settings.json"))
+    dirs::home_dir().map(|h| h.join(".openclaude").join("bot_settings.json"))
 }
 
-/// Legacy bot settings path for backward compatibility: ~/.openclaude/bot_settings.json
+/// Legacy bot settings path for backward compatibility: ~/.opencodex/bot_settings.json
 fn legacy_bot_settings_path() -> Option<std::path::PathBuf> {
-    dirs::home_dir().map(|h| h.join(".openclaude").join("bot_settings.json"))
+    dirs::home_dir().map(|h| h.join(".opencodex").join("bot_settings.json"))
 }
 
 fn parse_bot_settings_entry(entry: &serde_json::Value) -> BotSettings {
@@ -325,7 +325,7 @@ fn risk_badge(destructive: bool) -> &'static str {
 }
 
 /// Entry point: start the Telegram bot with long polling.
-/// `default_project_dir` is the working directory bound by `opencodex <project_dir>`.
+/// `default_project_dir` is the working directory bound by `openclaude <project_dir>`.
 pub async fn run_bot(token: &str, default_project_dir: &str) {
     let bot = Bot::new(token);
     let bot_settings = load_bot_settings(token);
@@ -636,8 +636,8 @@ async fn handle_help_command(
     state: &SharedState,
 ) -> ResponseResult<()> {
     let help = "\
-<b>opencodex Telegram Bot</b>
-Manage server files &amp; chat with Codex AI.
+<b>openclaude Telegram Bot</b>
+Manage server files &amp; chat with Claude Code AI.
 
 <b>Session</b>
 <code>/start &lt;path&gt;</code> — Start session at directory
@@ -655,7 +655,7 @@ Send a file/photo — Upload to session directory
   e.g. <code>!ls -la</code>, <code>!git status</code>
 
 <b>AI Chat</b>
-Any other message is sent to Codex AI.
+Any other message is sent to Claude Code AI.
 AI can read, edit, and run commands in your session.
 
 <b>Tool Management</b>
@@ -1079,7 +1079,7 @@ async fn handle_file_upload(
         }
     }
 
-    // Record upload in session history and pending queue for Codex
+    // Record upload in session history and pending queue for Claude Code
     let upload_record = format!(
         "[File uploaded] {} → {} ({} bytes)",
         file_name,
@@ -1438,7 +1438,7 @@ async fn handle_public_command(
     Ok(())
 }
 
-/// Handle regular text messages - send to Codex AI
+/// Handle regular text messages - send to Claude Code AI
 async fn handle_text_message(
     bot: &Bot,
     chat_id: ChatId,
@@ -1457,7 +1457,7 @@ async fn handle_text_message(
             })
         });
         let tools = get_allowed_tools(&data.settings, chat_id);
-        // Drain pending uploads so they are sent to Codex exactly once
+        // Drain pending uploads so they are sent to Claude exactly once
         let uploads = data
             .sessions
             .get_mut(&chat_id)
@@ -1491,7 +1491,7 @@ async fn handle_text_message(
     // Sanitize input
     let sanitized_input = sanitize_user_input(user_text);
 
-    // Prepend pending file upload records so Codex knows about recently uploaded files
+    // Prepend pending file upload records so Claude knows about recently uploaded files
     let context_prompt = if pending_uploads.is_empty() {
         sanitized_input
     } else {
@@ -1528,9 +1528,9 @@ async fn handle_text_message(
          Current working directory: {}\n\n\
          When your work produces a file the user would want (generated code, reports, images, archives, etc.),\n\
          send it by running this bash command:\n\n\
-         opencodex --sendfile <filepath> --chat {} --key {}\n\n\
+         openclaude --sendfile <filepath> --chat {} --key {}\n\n\
          This delivers the file directly to the user's Telegram chat.\n\
-         Do NOT tell the user to use /down — use the command above instead. (legacy alias: openclaude)\n\n\
+         Do NOT tell the user to use /down — use the command above instead. (legacy alias: opencodex)\n\n\
          Always keep the user informed about what you are doing. \
          Briefly explain each step as you work (e.g. \"Reading the file...\", \"Creating the script...\", \"Running tests...\"). \
          The user cannot see your tool calls, so narrate your progress so they know what is happening.\n\n\
@@ -1554,7 +1554,7 @@ async fn handle_text_message(
     let current_path_clone = current_path.clone();
     let cancel_token_clone = cancel_token.clone();
 
-    // Run Codex in a blocking thread
+    // Run Claude Code in a blocking thread
     tokio::task::spawn_blocking(move || {
         let result = codex::execute_command_streaming(
             &context_prompt,
@@ -1813,7 +1813,7 @@ async fn handle_text_message(
             println!("  [{ts}] ■ Stopped");
 
             // Record user message + stopped response in history
-            // (Codex session context already has this interaction)
+            // (Claude session context already has this interaction)
             // Skip if session was cleared while we were running (race with /clear)
             let mut data = state_owned.lock().await;
             if let Some(session) = data.sessions.get_mut(&chat_id) {

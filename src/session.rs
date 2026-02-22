@@ -27,14 +27,14 @@ pub struct SessionData {
     pub created_at: String,
 }
 
-/// Primary session directory: ~/.opencodex/sessions
+/// Primary session directory: ~/.openclaude/sessions
 pub fn ai_sessions_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".opencodex").join("sessions"))
+    dirs::home_dir().map(|h| h.join(".openclaude").join("sessions"))
 }
 
-/// Legacy session directory for backward compatibility: ~/.openclaude/sessions
+/// Legacy session directory for backward compatibility: ~/.opencodex/sessions
 pub fn legacy_ai_sessions_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".openclaude").join("sessions"))
+    dirs::home_dir().map(|h| h.join(".opencodex").join("sessions"))
 }
 
 /// Basic prompt-sanitization copied from existing logic

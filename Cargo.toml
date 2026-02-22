@@ -1,16 +1,16 @@
 [package]
-name = "opencodex"
+name = "openclaude"
 version = "0.1.0"
 edition = "2021"
-description = "Telegram + Codex bridge CLI"
+description = "Telegram + Claude Code bridge CLI"
 license = "MIT"
 
 [[bin]]
-name = "opencodex"
+name = "openclaude"
 path = "src/main.rs"
 
 [[bin]]
-name = "openclaude"
+name = "opencodex"
 path = "src/main.rs"
 
 [dependencies]

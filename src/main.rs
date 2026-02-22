@@ -12,23 +12,19 @@ use serde::{Deserialize, Serialize};
 use teloxide::prelude::*;
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Telegram + Codex/OMX bridge")]
+#[command(version, about = "Telegram + Claude Code bridge")]
 struct Cli {
-    /// Project directory for Codex execution
+    /// Project directory for Claude Code execution
     #[arg(value_name = "PROJECT_DIR")]
     project_dir: Option<String>,
 
-    /// Telegram Bot token (saved to ~/.opencodex/config.json)
+    /// Telegram Bot token (saved to ~/.openclaude/config.json)
     #[arg(long)]
     token: Option<String>,
 
     /// Enable full permission bypass mode
     #[arg(long)]
     madmax: bool,
-
-    /// Use omx binary instead of codex
-    #[arg(long)]
-    omx: bool,
 
     /// Internal: send file to Telegram (used by AI output automation)
     #[arg(long, value_name = "FILE_PATH")]
@@ -49,11 +45,11 @@ struct AppConfig {
 }
 
 fn primary_config_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".opencodex").join("config.json"))
+    dirs::home_dir().map(|h| h.join(".openclaude").join("config.json"))
 }
 
 fn legacy_config_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".openclaude").join("config.json"))
+    dirs::home_dir().map(|h| h.join(".opencodex").join("config.json"))
 }
 
 fn load_config() -> AppConfig {
@@ -100,7 +96,7 @@ fn resolve_token(cli_token: Option<String>) -> Result<String> {
         return Ok(token);
     }
 
-    if let Ok(token) = env::var("OPENCODEX_TELEGRAM_TOKEN") {
+    if let Ok(token) = env::var("OPENCLAUDE_TELEGRAM_TOKEN") {
         if !token.trim().is_empty() {
             let mut cfg = load_config();
             cfg.token = Some(token.clone());
@@ -109,7 +105,7 @@ fn resolve_token(cli_token: Option<String>) -> Result<String> {
         }
     }
 
-    if let Ok(token) = env::var("OPENCLAUDE_TELEGRAM_TOKEN") {
+    if let Ok(token) = env::var("OPENCODEX_TELEGRAM_TOKEN") {
         if !token.trim().is_empty() {
             let mut cfg = load_config();
             cfg.token = Some(token.clone());
@@ -135,7 +131,7 @@ fn resolve_token(cli_token: Option<String>) -> Result<String> {
     }
 
     anyhow::bail!(
-        "Telegram token not found. Use one of:\n  1) opencodex <project_dir> --token <TOKEN>\n  2) export OPENCODEX_TELEGRAM_TOKEN=<TOKEN>\n  3) export OPENCLAUDE_TELEGRAM_TOKEN=<TOKEN> (legacy)\n  4) save token in ~/.opencodex/config.json"
+        "Telegram token not found. Use one of:\n  1) openclaude <project_dir> --token <TOKEN>\n  2) export OPENCLAUDE_TELEGRAM_TOKEN=<TOKEN>\n  3) export OPENCODEX_TELEGRAM_TOKEN=<TOKEN> (legacy)\n  4) save token in ~/.openclaude/config.json"
     );
 }
 
@@ -184,7 +180,7 @@ async fn handle_sendfile(path: &str, chat_id: i64, hash_key: &str) -> Result<()>
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    codex::configure_execution(cli.omx, cli.madmax);
+    codex::configure_execution(cli.madmax);
 
     if let Some(path) = cli.sendfile.as_deref() {
         let chat_id = cli
@@ -199,7 +195,7 @@ async fn main() -> Result<()> {
     }
 
     let project_dir = cli.project_dir.as_deref().context(
-        "Usage: opencodex <project_dir> [--token <TOKEN>] [--madmax] [--omx] (openclaude alias also supported)",
+        "Usage: openclaude <project_dir> [--token <TOKEN>] [--madmax] (opencodex alias also supported)",
     )?;
 
     let project_path = Path::new(project_dir);
@@ -215,7 +211,7 @@ async fn main() -> Result<()> {
     let token = resolve_token(cli.token)?;
     validate_telegram_token(&token).await?;
 
-    println!("opencodex {}", env!("CARGO_PKG_VERSION"));
+    println!("openclaude {}", env!("CARGO_PKG_VERSION"));
     println!("project_dir: {}", canonical_project);
     println!("status: connecting Telegram bot...");
 
