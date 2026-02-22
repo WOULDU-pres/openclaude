@@ -1,0 +1,10 @@
+/target
+Cargo.lock
+
+.codex/
+.omc/
+.omx/
+openspec/
+AGENT.md
+AGENTS.md
+WORKFLOW.md
