@@ -27,14 +27,9 @@ pub struct SessionData {
     pub created_at: String,
 }
 
-/// Primary session directory: ~/.openclaude/sessions
+/// Session directory: ~/<app_dir>/sessions
 pub fn ai_sessions_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".openclaude").join("sessions"))
-}
-
-/// Legacy session directory for backward compatibility: ~/.opencodex/sessions
-pub fn legacy_ai_sessions_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".opencodex").join("sessions"))
+    dirs::home_dir().map(|h| h.join(crate::app::dir_name()).join("sessions"))
 }
 
 /// Basic prompt-sanitization copied from existing logic

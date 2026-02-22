@@ -81,20 +81,13 @@ fn debug_log(msg: &str) {
         return;
     };
 
-    let log_paths = [
-        home.join(".openclaude").join("debug").join("claude.log"),
-        home.join(".opencodex").join("debug").join("claude.log"),
-    ];
-
-    for log_path in log_paths {
-        if let Some(parent) = log_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
-            let timestamp = chrono::Local::now().format("%H:%M:%S%.3f");
-            let _ = writeln!(file, "[{}] {}", timestamp, msg);
-            break;
-        }
+    let log_path = home.join(crate::app::dir_name()).join("debug").join("claude.log");
+    if let Some(parent) = log_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
+        let timestamp = chrono::Local::now().format("%H:%M:%S%.3f");
+        let _ = writeln!(file, "[{}] {}", timestamp, msg);
     }
 }
 
@@ -386,143 +379,161 @@ pub fn execute_command_streaming(
         )
     })?;
 
-    let args = ai_args(session_id)?;
     let full_prompt = build_full_prompt(prompt, system_prompt, allowed_tools);
-
-    debug_log(&format!("Command: {}", ai_bin));
-    debug_log(&format!("Args: {:?}", args));
-    debug_log(&format!("Prompt length: {}", full_prompt.len()));
-
-    let mut child = Command::new(ai_bin)
-        .args(&args)
-        .current_dir(working_dir)
-        .env_remove("CLAUDECODE")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to start {}: {}", binary_name, e))?;
-
-    if let Some(ref token) = cancel_token {
-        *token.child_pid.lock().unwrap() = Some(child.id());
-    }
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(full_prompt.as_bytes())
-            .map_err(|e| format!("Failed to write prompt to Claude stdin: {}", e))?;
-    }
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "Failed to capture stdout".to_string())?;
-
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| "Failed to capture stderr".to_string())?;
-
-    let stderr_handle = std::thread::spawn(move || {
-        let mut buf = String::new();
-        let mut reader = BufReader::new(stderr);
-        let _ = reader.read_to_string(&mut buf);
-        buf
-    });
-
-    let mut reader = BufReader::new(stdout);
-    let mut line_buf = String::new();
-    let mut last_session_id: Option<String> = None;
-    let mut done_sent = false;
+    let mut effective_session_id = session_id.map(String::from);
+    let mut retried = false;
 
     loop {
+        let args = ai_args(effective_session_id.as_deref())?;
+
+        debug_log(&format!("Command: {}", ai_bin));
+        debug_log(&format!("Args: {:?}", args));
+        debug_log(&format!("Prompt length: {}", full_prompt.len()));
+
+        let mut child = Command::new(ai_bin)
+            .args(&args)
+            .current_dir(working_dir)
+            .env_remove("CLAUDECODE")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to start {}: {}", binary_name, e))?;
+
+        if let Some(ref token) = cancel_token {
+            *token.child_pid.lock().unwrap() = Some(child.id());
+        }
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(full_prompt.as_bytes())
+                .map_err(|e| format!("Failed to write prompt to Claude stdin: {}", e))?;
+        }
+
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "Failed to capture stdout".to_string())?;
+
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| "Failed to capture stderr".to_string())?;
+
+        let stderr_handle = std::thread::spawn(move || {
+            let mut buf = String::new();
+            let mut reader = BufReader::new(stderr);
+            let _ = reader.read_to_string(&mut buf);
+            buf
+        });
+
+        let mut reader = BufReader::new(stdout);
+        let mut line_buf = String::new();
+        let mut last_session_id: Option<String> = None;
+        let mut done_sent = false;
+
+        loop {
+            if let Some(ref token) = cancel_token {
+                if token.cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                    debug_log("Cancel detected — killing AI process");
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Ok(());
+                }
+            }
+
+            line_buf.clear();
+            let read = reader
+                .read_line(&mut line_buf)
+                .map_err(|e| format!("Failed to read Claude output: {}", e))?;
+
+            if read == 0 {
+                break;
+            }
+
+            let line = line_buf.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            debug_log(&format!("line: {}", line));
+
+            let Ok(json) = serde_json::from_str::<Value>(line) else {
+                continue;
+            };
+
+            let parsed = parse_codex_stream_line(&json);
+            for mut msg in parsed {
+                match &mut msg {
+                    StreamMessage::Init { session_id } => {
+                        last_session_id = Some(session_id.clone());
+                    }
+                    StreamMessage::Done {
+                        session_id,
+                        result: _,
+                    } => {
+                        if session_id.is_none() {
+                            *session_id = last_session_id.clone();
+                        }
+                        done_sent = true;
+                    }
+                    StreamMessage::Text { .. }
+                    | StreamMessage::ToolUse { .. }
+                    | StreamMessage::ToolResult { .. }
+                    | StreamMessage::TaskNotification { .. }
+                    | StreamMessage::Error { .. } => {}
+                }
+
+                if sender.send(msg).is_err() {
+                    debug_log("Receiver dropped while streaming; stopping send loop");
+                    break;
+                }
+            }
+        }
+
         if let Some(ref token) = cancel_token {
             if token.cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                debug_log("Cancel detected — killing AI process");
+                debug_log("Cancel detected after stdout loop — killing AI process");
                 let _ = child.kill();
                 let _ = child.wait();
                 return Ok(());
             }
         }
 
-        line_buf.clear();
-        let read = reader
-            .read_line(&mut line_buf)
-            .map_err(|e| format!("Failed to read Claude output: {}", e))?;
+        let status = child
+            .wait()
+            .map_err(|e| format!("Claude process wait failed: {}", e))?;
 
-        if read == 0 {
-            break;
-        }
+        let stderr_output = stderr_handle.join().unwrap_or_else(|_| "".to_string());
 
-        let line = line_buf.trim();
-        if line.is_empty() {
-            continue;
-        }
-
-        debug_log(&format!("line: {}", line));
-
-        let Ok(json) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-
-        let parsed = parse_codex_stream_line(&json);
-        for mut msg in parsed {
-            match &mut msg {
-                StreamMessage::Init { session_id } => {
-                    last_session_id = Some(session_id.clone());
+        if !status.success() {
+            // Auto-retry once without --resume on stale session error
+            if !retried && effective_session_id.is_some() {
+                let stderr_lower = stderr_output.to_lowercase();
+                if stderr_lower.contains("no conversation found") {
+                    debug_log("Stale session detected — retrying without --resume");
+                    effective_session_id = None;
+                    retried = true;
+                    continue;
                 }
-                StreamMessage::Done {
-                    session_id,
-                    result: _,
-                } => {
-                    if session_id.is_none() {
-                        *session_id = last_session_id.clone();
-                    }
-                    done_sent = true;
-                }
-                StreamMessage::Text { .. }
-                | StreamMessage::ToolUse { .. }
-                | StreamMessage::ToolResult { .. }
-                | StreamMessage::TaskNotification { .. }
-                | StreamMessage::Error { .. } => {}
             }
 
-            if sender.send(msg).is_err() {
-                debug_log("Receiver dropped while streaming; stopping send loop");
-                break;
-            }
+            let message = if !stderr_output.trim().is_empty() {
+                stderr_output.trim().to_string()
+            } else {
+                format!("Claude exited with code {:?}", status.code())
+            };
+            let _ = sender.send(StreamMessage::Error { message });
         }
-    }
 
-    if let Some(ref token) = cancel_token {
-        if token.cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                debug_log("Cancel detected after stdout loop — killing AI process");
-            let _ = child.kill();
-            let _ = child.wait();
-            return Ok(());
+        if !done_sent {
+            let _ = sender.send(StreamMessage::Done {
+                result: String::new(),
+                session_id: last_session_id,
+            });
         }
-    }
 
-    let status = child
-        .wait()
-        .map_err(|e| format!("Claude process wait failed: {}", e))?;
-
-    let stderr_output = stderr_handle.join().unwrap_or_else(|_| "".to_string());
-
-    if !status.success() {
-        let message = if !stderr_output.trim().is_empty() {
-            stderr_output.trim().to_string()
-        } else {
-            format!("Claude exited with code {:?}", status.code())
-        };
-        let _ = sender.send(StreamMessage::Error { message });
-    }
-
-    if !done_sent {
-        let _ = sender.send(StreamMessage::Done {
-            result: String::new(),
-            session_id: last_session_id,
-        });
+        break;
     }
 
     debug_log("======================================");
