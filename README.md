@@ -7,14 +7,12 @@
 - `--madmax` 플래그로 Claude Code 권한 확인 완전 우회 실행
 - 첫 DM 사용자 Owner 임프린트 (기본 접근 제어)
 - 일반 텍스트 → Claude Code 스트리밍 응답
-- `/help`, `/pwd`, `/stop`, `/down <file>`, `!<shell>` 지원
+- `/help`, `/pwd`, `/cd`, `/stop`, `/down <file>`, `!<shell>` 지원
 - 세션 저장(기본): `~/.openclaude/sessions/*.json`
 - 내부 파일 전송: `openclaude --sendfile <path> --chat <id> --key <hash>`
 
-호환성:
-- 레거시 환경변수 `OPENCODEX_TELEGRAM_TOKEN`도 계속 지원
-- 레거시 경로 `~/.opencodex/*`를 읽고 함께 갱신
-- 레거시 바이너리 이름 `opencodex`도 alias로 제공
+> **참고**: `openclaude`와 `opencodex`는 완전히 분리된 독립 프로젝트입니다.
+> 각각 자체 바이너리, 설정 디렉터리, Telegram 토큰을 사용합니다.
 
 ---
 
@@ -41,8 +39,10 @@ cd ~/workspace/openclaude
 
 원하면 전역 설치:
 ```bash
-~/.cargo/bin/cargo install --path ~/workspace/openclaude --force
+~/.cargo/bin/cargo install --path ~/workspace/openclaude --force --bin openclaude
 ```
+
+> `--bin openclaude`를 붙이면 이 프로젝트의 바이너리만 설치됩니다.
 
 ---
 
@@ -51,9 +51,8 @@ cd ~/workspace/openclaude
 토큰 우선순위:
 1. `--token <TOKEN>`
 2. `OPENCLAUDE_TELEGRAM_TOKEN`
-3. `OPENCODEX_TELEGRAM_TOKEN` (legacy)
-4. `TELEGRAM_BOT_TOKEN`
-5. `~/.openclaude/config.json` 저장값
+3. `TELEGRAM_BOT_TOKEN`
+4. `~/.openclaude/config.json` 저장값
 
 토큰이 CLI 인자 또는 환경변수로 들어오면 `~/.openclaude/config.json`에 자동 저장됩니다.
 실행 전 Telegram `getMe` 검증을 수행하므로 잘못된 토큰이면 즉시 종료됩니다.
@@ -82,6 +81,7 @@ openclaude ~/workspace/my-project
 
 - `/help` : 도움말
 - `/pwd` : 현재 작업 경로
+- `/cd <path>` : 작업 디렉터리 변경 (세션 유지, 절대/상대/~ 경로 지원)
 - `/stop` : 현재 AI 요청 중단
 - `/down <file>` : 파일 다운로드
 - `!<command>` : 프로젝트 디렉터리에서 쉘 실행
@@ -95,7 +95,6 @@ openclaude ~/workspace/my-project
 - `~/.openclaude/config.json` : 기본 토큰
 - `~/.openclaude/bot_settings.json` : owner, 토큰 해시 매핑, 마지막 세션 정보
 - `~/.openclaude/sessions/*.json` : 대화 세션 히스토리
-- (호환) `~/.opencodex/*` 경로도 읽고 갱신
 
 ---
 
