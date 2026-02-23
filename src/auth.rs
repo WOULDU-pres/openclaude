@@ -1,5 +1,6 @@
 /// Permission levels for users interacting with the bot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum PermissionLevel {
     Owner,
     Public,

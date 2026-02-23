@@ -4,6 +4,7 @@ use std::sync::atomic::Ordering;
 use teloxide::prelude::*;
 use teloxide::types::ParseMode;
 
+use crate::auth::is_path_within_sandbox;
 use crate::session::HistoryType;
 
 use super::bot::{shared_rate_limit_wait, SharedState};
@@ -151,7 +152,7 @@ pub(crate) async fn handle_start_command(
 
             // Show last 5 conversation items
             let history_len = session_data.history.len();
-            let start_idx = if history_len > 5 { history_len - 5 } else { 0 };
+            let start_idx = history_len.saturating_sub(5);
             for item in &session_data.history[start_idx..] {
                 let prefix = match item.item_type {
                     HistoryType::User => "You",
@@ -212,6 +213,9 @@ pub(crate) async fn handle_clear_command(
         if let Ok(guard) = token.child_pid.lock() {
             if let Some(pid) = *guard {
                 #[cfg(unix)]
+                // SAFETY: pid was obtained from child.id() and the child process is still
+                // tracked. SIGTERM is a safe signal that asks the process to terminate.
+                #[allow(unsafe_code)]
                 unsafe {
                     libc::kill(pid as libc::pid_t, libc::SIGTERM);
                 }
@@ -268,6 +272,7 @@ pub(crate) async fn handle_cd_command(
     chat_id: ChatId,
     text: &str,
     state: &SharedState,
+    token: &str,
 ) -> ResponseResult<()> {
     let path_str = text.strip_prefix("/cd").unwrap_or("").trim();
 
@@ -337,6 +342,21 @@ pub(crate) async fn handle_cd_command(
         .map(|p| p.display().to_string())
         .unwrap_or(expanded);
 
+    // Sandbox check: target must be within the home directory
+    let sandbox_root = dirs::home_dir().unwrap_or_else(|| Path::new("/").to_path_buf());
+    if !is_path_within_sandbox(Path::new(&canonical), &sandbox_root) {
+        shared_rate_limit_wait(state, chat_id).await;
+        bot.send_message(
+            chat_id,
+            format!(
+                "Access denied: '{}' is outside the allowed path sandbox.",
+                canonical
+            ),
+        )
+        .await?;
+        return Ok(());
+    }
+
     // Update only current_path, preserve session and history
     {
         let mut data = state.lock().await;
@@ -348,6 +368,15 @@ pub(crate) async fn handle_cd_command(
                 .await?;
             return Ok(());
         }
+    }
+
+    // Persist the new path for auto-restore after bot restart (same as /start)
+    {
+        let mut data = state.lock().await;
+        data.settings
+            .last_sessions
+            .insert(chat_id.0.to_string(), canonical.clone());
+        save_bot_settings(token, &data.settings);
     }
 
     shared_rate_limit_wait(state, chat_id).await;
@@ -393,6 +422,9 @@ pub(crate) async fn handle_stop_command(
             if let Ok(guard) = token.child_pid.lock() {
                 if let Some(pid) = *guard {
                     #[cfg(unix)]
+                    // SAFETY: pid was obtained from child.id() and the child process is still
+                    // tracked. SIGTERM is a safe signal that asks the process to terminate.
+                    #[allow(unsafe_code)]
                     unsafe {
                         libc::kill(pid as libc::pid_t, libc::SIGTERM);
                     }

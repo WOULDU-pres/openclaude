@@ -5,6 +5,7 @@ use std::sync::Arc;
 use teloxide::prelude::*;
 use teloxide::types::ParseMode;
 
+use crate::auth::{can_execute, classify_command};
 use crate::claude::{self, CancelToken, StreamMessage, DEFAULT_ALLOWED_TOOLS};
 use crate::session::{sanitize_user_input, HistoryItem, HistoryType};
 
@@ -91,6 +92,20 @@ pub(crate) async fn handle_message(
     };
 
     let user_name = format!("{}({uid})", raw_user_name);
+
+    // Permission check for file/photo uploads and text commands
+    // is_public: whether this chat has public access enabled
+    let is_public = {
+        let data = state.lock().await;
+        let chat_key = chat_id.0.to_string();
+        is_group_chat
+            && data
+                .settings
+                .as_public_for_group_chat
+                .get(&chat_key)
+                .copied()
+                .unwrap_or(false)
+    };
 
     // Handle file/photo uploads
     if msg.document().is_some() || msg.photo().is_some() {
@@ -194,6 +209,21 @@ pub(crate) async fn handle_message(
         }
     }
 
+    // Permission check: classify command risk and verify the user can execute it.
+    // /stop and /help are always allowed (Safe). Other commands are checked here.
+    if !text.starts_with("/stop") && !text.starts_with("/help") {
+        let risk = classify_command(&text);
+        if !can_execute(is_owner, is_public, risk) {
+            shared_rate_limit_wait(&state, chat_id).await;
+            bot.send_message(
+                chat_id,
+                "Permission denied: this command requires owner access.",
+            )
+            .await?;
+            return Ok(());
+        }
+    }
+
     if text.starts_with("/stop") {
         println!("  [{timestamp}] ◀ [{user_name}] /stop");
         handle_stop_command(&bot, chat_id, &state).await?;
@@ -215,7 +245,7 @@ pub(crate) async fn handle_message(
             "  [{timestamp}] ◀ [{user_name}] /cd {}",
             text.strip_prefix("/cd").unwrap_or("").trim()
         );
-        handle_cd_command(&bot, chat_id, &text, &state).await?;
+        handle_cd_command(&bot, chat_id, &text, &state, token).await?;
     } else if text.starts_with("/down") {
         println!(
             "  [{timestamp}] ◀ [{user_name}] /down {}",
@@ -552,6 +582,9 @@ async fn handle_text_message(
             if let Ok(guard) = cancel_token.child_pid.lock() {
                 if let Some(pid) = *guard {
                     #[cfg(unix)]
+                    // SAFETY: pid was obtained from child.id() and the child process is still
+                    // tracked. SIGTERM is a safe signal that asks the process to terminate.
+                    #[allow(unsafe_code)]
                     unsafe {
                         libc::kill(pid as libc::pid_t, libc::SIGTERM);
                     }

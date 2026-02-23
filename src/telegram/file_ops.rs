@@ -3,6 +3,7 @@ use std::path::Path;
 
 use teloxide::prelude::*;
 
+use crate::auth::{is_path_within_sandbox, DEFAULT_UPLOAD_LIMIT};
 use crate::session::{HistoryItem, HistoryType};
 
 use super::bot::{shared_rate_limit_wait, SharedState};
@@ -55,14 +56,29 @@ pub(crate) async fn handle_down_command(
     let path = Path::new(&resolved_path);
     if !path.exists() {
         shared_rate_limit_wait(state, chat_id).await;
-        bot.send_message(chat_id, &format!("File not found: {}", resolved_path))
+        bot.send_message(chat_id, format!("File not found: {}", resolved_path))
             .await?;
         return Ok(());
     }
     if !path.is_file() {
         shared_rate_limit_wait(state, chat_id).await;
-        bot.send_message(chat_id, &format!("Not a file: {}", resolved_path))
+        bot.send_message(chat_id, format!("Not a file: {}", resolved_path))
             .await?;
+        return Ok(());
+    }
+
+    // Sandbox check: only allow downloading files within the home directory
+    let sandbox_root = dirs::home_dir().unwrap_or_else(|| Path::new("/").to_path_buf());
+    if !is_path_within_sandbox(path, &sandbox_root) {
+        shared_rate_limit_wait(state, chat_id).await;
+        bot.send_message(
+            chat_id,
+            format!(
+                "Access denied: '{}' is outside the allowed path sandbox.",
+                resolved_path
+            ),
+        )
+        .await?;
         return Ok(());
     }
 
@@ -127,18 +143,33 @@ pub(crate) async fn handle_file_upload(
             Ok(bytes) => bytes,
             Err(e) => {
                 shared_rate_limit_wait(state, chat_id).await;
-                bot.send_message(chat_id, &format!("Download failed: {}", e))
+                bot.send_message(chat_id, format!("Download failed: {}", e))
                     .await?;
                 return Ok(());
             }
         },
         Err(e) => {
             shared_rate_limit_wait(state, chat_id).await;
-            bot.send_message(chat_id, &format!("Download failed: {}", e))
+            bot.send_message(chat_id, format!("Download failed: {}", e))
                 .await?;
             return Ok(());
         }
     };
+
+    // Enforce upload size limit before writing to disk
+    if buf.len() as u64 > DEFAULT_UPLOAD_LIMIT {
+        shared_rate_limit_wait(state, chat_id).await;
+        bot.send_message(
+            chat_id,
+            format!(
+                "File too large: {} bytes (limit: {} bytes / 50 MiB).",
+                buf.len(),
+                DEFAULT_UPLOAD_LIMIT
+            ),
+        )
+        .await?;
+        return Ok(());
+    }
 
     // Save to session path (sanitize file_name to prevent path traversal)
     let safe_name = Path::new(&file_name)
@@ -150,11 +181,11 @@ pub(crate) async fn handle_file_upload(
         Ok(_) => {
             let msg_text = format!("Saved: {}\n({} bytes)", dest.display(), file_size);
             shared_rate_limit_wait(state, chat_id).await;
-            bot.send_message(chat_id, &msg_text).await?;
+            bot.send_message(chat_id, msg_text).await?;
         }
         Err(e) => {
             shared_rate_limit_wait(state, chat_id).await;
-            bot.send_message(chat_id, &format!("Failed to save file: {}", e))
+            bot.send_message(chat_id, format!("Failed to save file: {}", e))
                 .await?;
             return Ok(());
         }
@@ -254,9 +285,7 @@ pub(crate) async fn handle_shell_command(
                     super::streaming::html_escape(stderr.trim_end())
                 ));
             }
-            if parts.is_empty() {
-                parts.push(format!("(exit code: {})", exit_code));
-            } else if exit_code != 0 {
+            if parts.is_empty() || exit_code != 0 {
                 parts.push(format!("(exit code: {})", exit_code));
             }
 
