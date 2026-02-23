@@ -79,14 +79,34 @@ openclaude ~/workspace/my-project
 
 ## 4) Telegram 명령
 
-- `/help` : 도움말
-- `/pwd` : 현재 작업 경로
+**Session Management**
+- `/start [path]` : 세션 시작 (경로 선택)
+- `/pwd` : 현재 작업 경로 표시
 - `/cd <path>` : 작업 디렉터리 변경 (세션 유지, 절대/상대/~ 경로 지원)
-- `/stop` : 현재 AI 요청 중단
-- `/down <file>` : 파일 다운로드
-- `!<command>` : 프로젝트 디렉터리에서 쉘 실행
+- `/clear` : AI 대화 히스토리 삭제
 
-일반 텍스트 메시지는 Claude Code로 전달되어 스트리밍 응답됩니다.
+**AI & Control**
+- `일반 텍스트` : Claude Code로 전달되어 스트리밍 응답
+- `/stop` : 현재 AI 요청 중단
+- `!<command>` : 프로젝트 디렉터리에서 쉘 실행
+- `;<message>` : 그룹 채트에서 AI에 메시지 전송
+
+**File Transfer**
+- `/down <file>` : 파일 다운로드
+- `파일/사진 전송` : 세션 디렉터리에 업로드
+
+**Tool Management**
+- `/availabletools` : 사용 가능한 모든 도구 목록
+- `/allowedtools` : 현재 허용된 도구 목록 표시
+- `/allowed +toolname` : 도구 추가 (예: `/allowed +Bash`)
+- `/allowed -toolname` : 도구 제거
+
+**Group Chat**
+- `/public on` : 모든 멤버 사용 허용
+- `/public off` : 소유자만 사용 (기본값)
+
+**Help**
+- `/help` : 도움말
 
 ---
 
@@ -118,3 +138,23 @@ openspec status
 - `AGENT.md`
 - `WORKFLOW.md`
 - `AGENTS.md`
+
+---
+
+## 8) Known Issues (보안 경고)
+
+### Unmaintained Dependencies
+현재 2개의 전이 의존성이 unmaintained 상태입니다:
+
+**1. proc-macro-error v1.0.4** (RUSTSEC-2024-0370)
+- **영향 체인**: teloxide → aquamarine → proc-macro-error
+- **상태**: unmaintained (2024-09-01)
+- **해결책**: `teloxide` 업그레이드 필요. 현재 0.13 사용 중. 차기 버전에서 aquamarine 제거 여부 확인 필요.
+- **위험도**: 낮음 (매크로 오류 처리용 라이브러리)
+
+**2. rustls-pemfile v1.0.4** (RUSTSEC-2025-0134)
+- **영향 체인**: teloxide → teloxide-core → reqwest v0.11.27 → rustls-pemfile
+- **상태**: unmaintained (2025-11-28)
+- **해결책**: `reqwest` 0.12+ 버전으로 업그레이드하면 해결. 현재 0.12 사용 중이지만 `teloxide-core 0.10.1`이 reqwest 0.11.27을 요구함.
+- **권장사항**: `teloxide` 업그레이드 대기 (0.14+에서 teloxide-core 0.11+ 지원 예상)
+- **위험도**: 낮음 (PEM 파일 파싱용 라이브러리)
