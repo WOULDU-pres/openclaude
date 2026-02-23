@@ -223,16 +223,16 @@ pub(crate) async fn handle_allowed_command(
         let mut data = state.lock().await;
         let chat_key = chat_id.0.to_string();
         // Ensure this chat has its own tool list (initialize from defaults if missing)
-        if !data.settings.allowed_tools.contains_key(&chat_key) {
-            let defaults: Vec<String> = DEFAULT_ALLOWED_TOOLS
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
-            data.settings
-                .allowed_tools
-                .insert(chat_key.clone(), defaults);
-        }
-        let tools = data.settings.allowed_tools.get_mut(&chat_key).unwrap();
+        let tools = data
+            .settings
+            .allowed_tools
+            .entry(chat_key.clone())
+            .or_insert_with(|| {
+                DEFAULT_ALLOWED_TOOLS
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect()
+            });
         match op {
             '+' => {
                 if tools.iter().any(|t| t == &tool_name) {

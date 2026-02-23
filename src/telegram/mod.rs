@@ -16,7 +16,6 @@ use self::storage::load_bot_settings;
 
 // Re-export public API used by main.rs
 pub use self::storage::resolve_token_by_hash;
-pub use self::storage::token_hash;
 
 /// Entry point: start the Telegram bot with long polling.
 /// `default_project_dir` is the working directory bound by the CLI binary.

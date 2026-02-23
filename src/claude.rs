@@ -95,6 +95,7 @@ fn debug_log(msg: &str) {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct CodexResponse {
     pub success: bool,
     pub response: Option<String>,
@@ -114,6 +115,7 @@ pub enum StreamMessage {
     /// Tool execution result
     ToolResult { content: String, is_error: bool },
     /// Background task notification
+    #[allow(dead_code)]
     TaskNotification {
         task_id: String,
         status: String,
@@ -145,6 +147,7 @@ impl CancelToken {
 }
 
 /// Cached regex pattern for session/thread ID validation
+#[allow(clippy::expect_used)] // compile-time constant regex, cannot fail
 fn session_id_regex() -> &'static Regex {
     static REGEX: OnceLock<Regex> = OnceLock::new();
     REGEX.get_or_init(|| Regex::new(r"^[a-zA-Z0-9_-]+$").expect("Invalid session ID regex"))
@@ -255,6 +258,7 @@ fn ai_args(session_id: Option<&str>) -> Result<Vec<String>, String> {
 }
 
 /// Execute a command using Claude Code CLI (non-streaming convenience wrapper)
+#[allow(dead_code)]
 pub fn execute_command(
     prompt: &str,
     session_id: Option<&str>,
@@ -336,6 +340,7 @@ pub fn execute_command(
 }
 
 /// Check if Claude Code CLI is available
+#[allow(dead_code)]
 pub fn is_claude_available() -> bool {
     #[cfg(not(unix))]
     {
@@ -349,6 +354,7 @@ pub fn is_claude_available() -> bool {
 }
 
 /// Check if platform supports AI features
+#[allow(dead_code)]
 pub fn is_ai_supported() -> bool {
     cfg!(unix)
 }
@@ -399,7 +405,9 @@ pub fn execute_command_streaming(
             .map_err(|e| format!("Failed to start {}: {}", binary_name, e))?;
 
         if let Some(ref token) = cancel_token {
-            *token.child_pid.lock().unwrap() = Some(child.id());
+            if let Ok(mut guard) = token.child_pid.lock() {
+                *guard = Some(child.id());
+            }
         }
 
         if let Some(mut stdin) = child.stdin.take() {
@@ -738,6 +746,7 @@ fn parse_claude_stream_line(json: &Value) -> Vec<StreamMessage> {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 

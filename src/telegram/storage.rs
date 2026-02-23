@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 use crate::session::{ai_sessions_dir, HistoryItem, HistoryType, SessionData};
 
 /// Bot-level settings persisted to disk
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct BotSettings {
     pub(crate) allowed_tools: HashMap<String, Vec<String>>,
     /// chat_id (string) -> last working directory path
@@ -15,17 +15,6 @@ pub(crate) struct BotSettings {
     pub(crate) owner_user_id: Option<u64>,
     /// chat_id (string) -> true if group chat is public (non-owner users allowed)
     pub(crate) as_public_for_group_chat: HashMap<String, bool>,
-}
-
-impl Default for BotSettings {
-    fn default() -> Self {
-        Self {
-            allowed_tools: HashMap::new(),
-            last_sessions: HashMap::new(),
-            owner_user_id: None,
-            as_public_for_group_chat: HashMap::new(),
-        }
-    }
 }
 
 /// Per-chat session state

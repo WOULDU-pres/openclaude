@@ -186,23 +186,19 @@ pub(crate) fn markdown_to_telegram_html(md: &str) -> String {
         }
 
         // Unordered list (- or *)
-        if trimmed.starts_with("- ") {
-            result.push_str(&format!(
-                "• {}",
-                convert_inline(&html_escape(&trimmed[2..]))
-            ));
+        if let Some(rest) = trimmed.strip_prefix("- ") {
+            result.push_str(&format!("• {}", convert_inline(&html_escape(rest))));
             result.push('\n');
             i += 1;
             continue;
         }
-        if trimmed.starts_with("* ") && !trimmed.starts_with("**") {
-            result.push_str(&format!(
-                "• {}",
-                convert_inline(&html_escape(&trimmed[2..]))
-            ));
-            result.push('\n');
-            i += 1;
-            continue;
+        if !trimmed.starts_with("**") {
+            if let Some(rest) = trimmed.strip_prefix("* ") {
+                result.push_str(&format!("• {}", convert_inline(&html_escape(rest))));
+                result.push('\n');
+                i += 1;
+                continue;
+            }
         }
 
         // Regular line
