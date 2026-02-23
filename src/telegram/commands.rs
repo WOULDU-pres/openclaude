@@ -125,6 +125,21 @@ pub(crate) async fn handle_start_command(
             .unwrap_or_else(|_| expanded)
     };
 
+    // Sandbox check: target must be within the home directory
+    let sandbox_root = dirs::home_dir().unwrap_or_else(|| Path::new("/").to_path_buf());
+    if !is_path_within_sandbox(Path::new(&canonical_path), &sandbox_root) {
+        shared_rate_limit_wait(state, chat_id).await;
+        bot.send_message(
+            chat_id,
+            format!(
+                "Access denied: '{}' is outside the allowed path sandbox.",
+                canonical_path
+            ),
+        )
+        .await?;
+        return Ok(());
+    }
+
     // Try to load existing session for this path
     let existing = load_existing_session(&canonical_path);
 

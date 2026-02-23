@@ -5,7 +5,7 @@ use std::sync::Arc;
 use teloxide::prelude::*;
 use teloxide::types::ParseMode;
 
-use crate::auth::{can_execute, classify_command};
+use crate::auth::{can_execute, classify_command, CommandRisk};
 use crate::claude::{self, CancelToken, StreamMessage, DEFAULT_ALLOWED_TOOLS};
 use crate::session::{sanitize_user_input, HistoryItem, HistoryType};
 
@@ -109,6 +109,16 @@ pub(crate) async fn handle_message(
 
     // Handle file/photo uploads
     if msg.document().is_some() || msg.photo().is_some() {
+        // Permission check: file uploads write to disk (Elevated risk)
+        if !can_execute(is_owner, is_public, CommandRisk::Elevated) {
+            shared_rate_limit_wait(&state, chat_id).await;
+            bot.send_message(
+                chat_id,
+                "Permission denied: file uploads require owner access.",
+            )
+            .await?;
+            return Ok(());
+        }
         // In group chats, only process uploads whose caption starts with ';'
         if is_group_chat {
             let caption = msg.caption().unwrap_or("");
