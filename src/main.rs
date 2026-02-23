@@ -1,5 +1,6 @@
 mod app;
-mod codex;
+mod auth;
+mod claude;
 mod session;
 mod telegram;
 
@@ -65,6 +66,15 @@ fn write_config_file(path: &Path, config: &AppConfig) {
     }
     if let Ok(serialized) = serde_json::to_string_pretty(config) {
         let _ = fs::write(path, serialized);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(metadata) = std::fs::metadata(path) {
+                let mut perms = metadata.permissions();
+                perms.set_mode(0o600);
+                let _ = std::fs::set_permissions(path, perms);
+            }
+        }
     }
 }
 
@@ -163,7 +173,7 @@ async fn handle_sendfile(path: &str, chat_id: i64, hash_key: &str) -> Result<()>
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    codex::configure_execution(cli.madmax);
+    claude::configure_execution(cli.madmax);
 
     if let Some(path) = cli.sendfile.as_deref() {
         let chat_id = cli

@@ -81,7 +81,10 @@ fn debug_log(msg: &str) {
         return;
     };
 
-    let log_path = home.join(crate::app::dir_name()).join("debug").join("claude.log");
+    let log_path = home
+        .join(crate::app::dir_name())
+        .join("debug")
+        .join("claude.log");
     if let Some(parent) = log_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -237,7 +240,7 @@ fn ai_args(session_id: Option<&str>) -> Result<Vec<String>, String> {
         args.push("--dangerously-skip-permissions".to_string());
     } else {
         args.push("--permission-mode".to_string());
-        args.push("bypassPermissions".to_string());
+        args.push("default".to_string());
     }
 
     if let Some(sid) = session_id {
@@ -333,7 +336,7 @@ pub fn execute_command(
 }
 
 /// Check if Claude Code CLI is available
-pub fn is_codex_available() -> bool {
+pub fn is_claude_available() -> bool {
     #[cfg(not(unix))]
     {
         false
@@ -343,11 +346,6 @@ pub fn is_codex_available() -> bool {
     {
         get_ai_binary_path().is_some()
     }
-}
-
-/// Backward-compatible alias.
-pub fn is_claude_available() -> bool {
-    is_codex_available()
 }
 
 /// Check if platform supports AI features
@@ -462,7 +460,7 @@ pub fn execute_command_streaming(
                 continue;
             };
 
-            let parsed = parse_codex_stream_line(&json);
+            let parsed = parse_claude_stream_line(&json);
             for mut msg in parsed {
                 match &mut msg {
                     StreamMessage::Init { session_id } => {
@@ -544,7 +542,7 @@ pub fn execute_command_streaming(
 }
 
 /// Parse one Claude/Codex JSONL event line into zero or more StreamMessage values.
-fn parse_codex_stream_line(json: &Value) -> Vec<StreamMessage> {
+fn parse_claude_stream_line(json: &Value) -> Vec<StreamMessage> {
     let mut messages = Vec::new();
 
     let Some(event_type) = json.get("type").and_then(|v| v.as_str()) else {
@@ -776,7 +774,7 @@ mod tests {
     #[test]
     fn test_parse_thread_started() {
         let json = parse_json(r#"{"type":"thread.started","thread_id":"thread-123"}"#);
-        let msgs = parse_codex_stream_line(&json);
+        let msgs = parse_claude_stream_line(&json);
         assert_eq!(msgs.len(), 1);
         match &msgs[0] {
             StreamMessage::Init { session_id } => assert_eq!(session_id, "thread-123"),
@@ -789,7 +787,7 @@ mod tests {
         let json = parse_json(
             r#"{"type":"system","subtype":"init","session_id":"54c57e53-7575-4fd6-820a-8432dc14ccb6"}"#,
         );
-        let msgs = parse_codex_stream_line(&json);
+        let msgs = parse_claude_stream_line(&json);
         assert_eq!(msgs.len(), 1);
         match &msgs[0] {
             StreamMessage::Init { session_id } => {
@@ -804,7 +802,7 @@ mod tests {
         let json = parse_json(
             r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Hello from Claude"}]}}"#,
         );
-        let msgs = parse_codex_stream_line(&json);
+        let msgs = parse_claude_stream_line(&json);
         assert_eq!(msgs.len(), 1);
         match &msgs[0] {
             StreamMessage::Text { content } => assert_eq!(content, "Hello from Claude"),
@@ -817,7 +815,7 @@ mod tests {
         let json = parse_json(
             r#"{"type":"result","is_error":false,"result":"done","session_id":"sess-1"}"#,
         );
-        let msgs = parse_codex_stream_line(&json);
+        let msgs = parse_claude_stream_line(&json);
         assert_eq!(msgs.len(), 1);
         match &msgs[0] {
             StreamMessage::Done { result, session_id } => {
@@ -833,7 +831,7 @@ mod tests {
         let json = parse_json(
             r#"{"type":"result","is_error":true,"errors":["boom"],"result":"","session_id":"sess-2"}"#,
         );
-        let msgs = parse_codex_stream_line(&json);
+        let msgs = parse_claude_stream_line(&json);
         assert_eq!(msgs.len(), 2);
         match &msgs[0] {
             StreamMessage::Error { message } => assert_eq!(message, "boom"),
@@ -853,7 +851,7 @@ mod tests {
         let json = parse_json(
             r#"{"type":"item.completed","item":{"type":"agent_message","text":"hello"}}"#,
         );
-        let msgs = parse_codex_stream_line(&json);
+        let msgs = parse_claude_stream_line(&json);
         assert_eq!(msgs.len(), 1);
         match &msgs[0] {
             StreamMessage::Text { content } => assert_eq!(content, "hello"),
@@ -866,7 +864,7 @@ mod tests {
         let json = parse_json(
             r#"{"type":"item.started","item":{"type":"command_execution","command":"/bin/bash -lc pwd"}}"#,
         );
-        let msgs = parse_codex_stream_line(&json);
+        let msgs = parse_claude_stream_line(&json);
         assert_eq!(msgs.len(), 1);
         match &msgs[0] {
             StreamMessage::ToolUse { name, input } => {
@@ -882,7 +880,7 @@ mod tests {
         let json = parse_json(
             r#"{"type":"item.completed","item":{"type":"command_execution","aggregated_output":"/tmp\n","exit_code":0}}"#,
         );
-        let msgs = parse_codex_stream_line(&json);
+        let msgs = parse_claude_stream_line(&json);
         assert_eq!(msgs.len(), 1);
         match &msgs[0] {
             StreamMessage::ToolResult { content, is_error } => {
@@ -898,7 +896,7 @@ mod tests {
         let json = parse_json(
             r#"{"type":"item.completed","item":{"type":"command_execution","aggregated_output":"boom\n","exit_code":1}}"#,
         );
-        let msgs = parse_codex_stream_line(&json);
+        let msgs = parse_claude_stream_line(&json);
         assert_eq!(msgs.len(), 1);
         match &msgs[0] {
             StreamMessage::ToolResult { content, is_error } => {
@@ -914,7 +912,7 @@ mod tests {
         let json = parse_json(
             r#"{"type":"item.completed","item":{"type":"error","message":"Under-development features enabled: child_agents_md"}}"#,
         );
-        let msgs = parse_codex_stream_line(&json);
+        let msgs = parse_claude_stream_line(&json);
         assert!(msgs.is_empty());
     }
 
@@ -923,7 +921,7 @@ mod tests {
         let json = parse_json(
             r#"{"type":"item.completed","item":{"type":"error","message":"failed to run"}}"#,
         );
-        let msgs = parse_codex_stream_line(&json);
+        let msgs = parse_claude_stream_line(&json);
         assert_eq!(msgs.len(), 1);
         match &msgs[0] {
             StreamMessage::Error { message } => assert_eq!(message, "failed to run"),
@@ -934,7 +932,7 @@ mod tests {
     #[test]
     fn test_parse_turn_completed() {
         let json = parse_json(r#"{"type":"turn.completed"}"#);
-        let msgs = parse_codex_stream_line(&json);
+        let msgs = parse_claude_stream_line(&json);
         assert_eq!(msgs.len(), 1);
         match &msgs[0] {
             StreamMessage::Done { .. } => {}
@@ -952,7 +950,7 @@ mod tests {
     }
 
     #[test]
-    fn test_codex_response_error_struct() {
+    fn test_claude_response_error_struct() {
         let response = CodexResponse {
             success: false,
             response: None,
@@ -964,7 +962,7 @@ mod tests {
     }
 
     #[test]
-    fn test_codex_response_success_struct() {
+    fn test_claude_response_success_struct() {
         let response = CodexResponse {
             success: true,
             response: Some("ok".to_string()),
@@ -993,7 +991,7 @@ mod tests {
                 "stream-json",
                 "--verbose",
                 "--permission-mode",
-                "bypassPermissions",
+                "default",
             ]
         );
     }
@@ -1009,7 +1007,7 @@ mod tests {
                 "stream-json",
                 "--verbose",
                 "--permission-mode",
-                "bypassPermissions",
+                "default",
                 "--resume",
                 "session-1",
             ]
